@@ -15,6 +15,8 @@ import plotly.graph_objects as go
 import matplotlib.dates as mdates
 from dm_test import dm_test
 from scipy import stats
+from scipy.special import  inv_boxcox
+
 
 # Ustawienia stylu podobne do ggplot2
 
@@ -117,8 +119,6 @@ data = sm.datasets.get_rdataset("ausbeer", package="fpp2").data
 # Mamy dwie kolumny: time i value
 
 
-
-
 # Funkcja do mapowania kwartałów na miesiące
 def convert_to_datetime(row):
     year, quarter = str(row).split('.')
@@ -127,18 +127,21 @@ def convert_to_datetime(row):
     return f"{year}-{month}-01"
 
 data['time'] = pd.to_datetime(data['time'].apply(convert_to_datetime))
-data = data.loc[data['time'] >= pd.Timestamp('2000-01-01')]
+data = data.loc[data['time'] >= pd.Timestamp('1990-01-01')]
 #ts_plot(data)
 
 
 #print(data.value.describe())
 '''
-Średnia wartość: 415
-STD value: 37
+Liczba: 82
+Średnia wartość: 438
+STD value: 47
 MIN: 374
-MAX: 506
+MAX: 599
+MEDIAN: 422
 Dane w milionach hektolitrów? Potwierdzić
 '''
+n=82
 
 ####### Wykres danych
 '''
@@ -150,8 +153,8 @@ plt.ylabel('Megalitry')
 plt.gca().xaxis.set_major_locator(mdates.YearLocator(1))  # Znaczniki co rok
 plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
 plt.tight_layout()
-#plt.savefig('wykres1.png', format='png', bbox_inches='tight')
-#plt.show()
+plt.savefig('wykres1.png', format='png', bbox_inches='tight')
+plt.show()
 '''
 
 # Dekompozycja, przyjęty model addytywny z okresem 4
@@ -161,10 +164,8 @@ plt.tight_layout()
 decomposition = seasonal_decompose(data['value'], model='additive', period=4, extrapolate_trend='freq')
 decompositionm = seasonal_decompose(data['value'], model='multiplicative', period=4, extrapolate_trend='freq')
 
-
-
-### Porównanie szumu uzyskanego za pomocą dekompozycji addytywnej vs multiplikatywnej
 '''
+### Porównanie szumu uzyskanego za pomocą dekompozycji addytywnej vs multiplikatywnej
 fig, ax = plt.subplots(2,1, sharex=True)
 fig.suptitle('Porównanie szumu M vs A')
 sns.lineplot(decomposition.resid,ax=ax[0], color='black')
@@ -173,10 +174,28 @@ sns.lineplot(decompositionm.resid,ax=ax[1], color='black')
 ax[1].set_title('M')
 plt.tight_layout()
 plt.show()
-'''
+
+
+
+### Dekompozycja
+fig, ax = plt.subplots(4,1, sharex=False)
+fig.suptitle('Dekompozycja Beer Production')
+sns.lineplot(data['value'],ax=ax[0], color='black')
+sns.lineplot(decomposition.trend + decomposition.seasonal, ax=ax[0], color='red', alpha=0.5)
+ax[0].set_title('Pierwotny szereg')
+sns.lineplot(decomposition.trend,ax=ax[1], color='darkred')
+ax[1].set_title('Składowa trendu')
+sns.lineplot(decomposition.seasonal,ax=ax[2], color='darkgreen')
+ax[2].set_title('Składowa sezonowa')
+sns.lineplot(decomposition.resid, ax=ax[3], color='darkblue')
+ax[3].set_title('Szum')
+plt.tight_layout()
+plt.show()
+
+
 
 ### Bardzo podobne
-'''
+### ACF
 fig, ax = plt.subplots(2, 1, sharex=True)
 fig.suptitle('Porównanie ACF')
 plot_acf(decomposition.resid, ax=ax[0], color='darkgreen', lags=41)
@@ -185,56 +204,94 @@ plot_acf(decompositionm.resid, ax=ax[1], color='darkgreen', lags=41)
 ax[1].set_title('Dekompozycja multiplikatywna')
 plt.tight_layout()
 plt.show()
+
+### PACF
+fig, ax = plt.subplots(2, 1, sharex=True)
+fig.suptitle('Porównanie ACF')
+plot_pacf(decomposition.resid, ax=ax[0], color='darkgreen', lags=41)
+ax[0].set_title('Dekompozycja addytywna')
+plot_pacf(decompositionm.resid, ax=ax[1], color='darkgreen', lags=41)
+ax[1].set_title('Dekompozycja multiplikatywna')
+plt.tight_layout()
+plt.show()
 '''
 
 
-### Test Ljung-Boxa / losowości reszt
-LBTestA = sm.stats.acorr_ljungbox(decomposition.resid - np.mean(decomposition.resid), auto_lag=True)
-LBTestM = sm.stats.acorr_ljungbox(decompositionm.resid - np.mean(decompositionm.resid), auto_lag=True)
-#print(LBTestA)
-#print(LBTestM)
 
+### Test Ljung-Boxa / losowości reszt
+LBTestA = sm.stats.acorr_ljungbox(decomposition.resid, lags=[4, 8, 12])
+LBTestM = sm.stats.acorr_ljungbox(decompositionm.resid, lags=[4, 8, 12])
 
 ### Test Shapiro - Wilka / normalności reszt
 SWTestA = stats.shapiro(decomposition.resid)
 SWTestM = stats.shapiro(decompositionm.resid)
-#print(SWTestA)
-#print(SWTestM)
 
-
-
-### WNIOSEK: Model addytywny (?)
 SSM1 = np.sum((decomposition.trend + decomposition.seasonal - data.value.mean())**2)
-SSM1M = np.sum((decomposition.trend + decomposition.seasonal - data.value.mean())**2)
+SSM1M = np.sum((decompositionm.trend*decompositionm.seasonal - data.value.mean())**2)
 SST = np.sum((data.value - data.value.mean())**2)
-
 R1 = SSM1/SST
-#print(f'R^2={R1}')
+
+'''
+print(f'Estymacja średnią kroczącą zakładając model addytywny:'
+      f'R^2 = {R1}\n'
+      f'LJUNG-BOX = {LBTestA}\n'
+      f'SHAPIRO-WILK = {SWTestA}\n')
+
+print(f'Estymacja średnią kroczącą zakładając model multiplikatywny:'
+      f'R^2 = {SSM1M/SST}\n'
+      f'LJUNG-BOX = {LBTestM}\n'
+      f'SHAPIRO-WILK = {SWTestM}\n')
+'''
 
 
 ### BOX-COX i regresja liniowa
 
-def estimate_season(x, n=42):
+def estimate_season(x, n=82):
     g_avg = [x[::4].mean(), x[1::4].mean(), x[2::4].mean(), x[3::4].mean()]
     season = np.tile(g_avg, n // len(g_avg) + 1)[:n]
     return season
 
-logdata = np.log(data.value)
-t = np.arange(42)
-reg = sm.OLS(logdata, sm.add_constant(t)).fit()
-log_trend = reg.fittedvalues
-x = logdata - reg.fittedvalues
-log_season = estimate_season(x)
-log_noise = logdata - log_trend - log_season
+# logdata = np.log(data.value) previous
+lambda1 = stats.boxcox(data.value)
+print(f'Nakładamy tranformacje box-cox z lambda =: {lambda1[1]}')
+boxdata = lambda1[0]
+t = np.arange(n)
 
-reg_trend = np.exp(log_trend)
-reg_season = np.exp(log_season)
-reg_noise = np.exp(log_noise)
 
-LBTestReg = sm.stats.acorr_ljungbox(reg_noise - np.mean(reg_noise), auto_lag=True)
+reg = sm.OLS(boxdata, sm.add_constant(t)).fit()
+reg_trend = inv_boxcox(reg.fittedvalues, lambda1[1])
+reg_season = estimate_season(data.value - reg_trend)
+reg_noise = data.value - reg_trend - reg_season
+
+LBTestReg = sm.stats.acorr_ljungbox(reg_noise, lags=[4, 8, 12])
 SWTestReg = stats.shapiro(reg_noise)
-SSM2 = np.sum((reg_trend*reg_season - data.value.mean())**2)
+SSM2 = np.sum((reg_trend+reg_season - data.value.mean())**2)
 R2 = SSM2/SST
+
+'''
+fig, ax = plt.subplots(4,1, sharex=False)
+fig.suptitle('Dekompozycja Beer Production')
+sns.lineplot(x=t,y=data['value'],ax=ax[0], color='black')
+sns.lineplot(reg_trend + reg_season, ax=ax[0], color='red', alpha=0.5)
+ax[0].set_title('Pierwotny szereg')
+sns.lineplot(reg_trend,ax=ax[1], color='darkred')
+ax[1].set_title('Składowa trendu')
+sns.lineplot(reg_season,ax=ax[2], color='darkgreen')
+ax[2].set_title('Składowa sezonowa')
+sns.lineplot(reg_noise, ax=ax[3], color='darkblue')
+ax[3].set_title('Szum')
+plt.tight_layout()
+plt.show()
+
+fig, ax = plt.subplots(2, 1, sharex=True)
+fig.suptitle('Porównanie ACF')
+plot_acf(reg_noise, ax=ax[0], color='darkgreen')
+ax[0].set_title('ACF')
+plot_pacf(reg_noise, ax=ax[1], color='darkgreen')
+ax[1].set_title('PACF')
+plt.tight_layout()
+plt.show()
+'''
 
 '''
 print(f'Transformacja Box-Cox i estymacja trendu regresją liniową:'
@@ -244,23 +301,82 @@ print(f'Transformacja Box-Cox i estymacja trendu regresją liniową:'
 '''
 
 
-
 ### model wielomianowy
-k = [2,3,4,5,6, 7, 8]
-coef_polyreg = {d: np.polyfit(t, logdata, d, full=True)[0] for d in k}
-polyreg = {d: {'trend': np.exp(np.polyval(coef_polyreg[d], t)),
-               'season': np.exp(estimate_season(logdata - np.polyval(coef_polyreg[d], t))),
-               'noise': np.exp(logdata - np.polyval(coef_polyreg[d], t) - estimate_season(logdata - np.polyval(coef_polyreg[d], t)))} for d in k}
+k = [2,3,4,5]
+coef_polyreg = {d: np.polyfit(t, boxdata, d, full=True)[0] for d in k}
+polyreg = {d: {'trend': inv_boxcox(np.polyval(coef_polyreg[d], t), lambda1[1]),
+               'season': estimate_season(data.value - inv_boxcox(np.polyval(coef_polyreg[d], t), lambda1[1])),
+               'noise': data.value -
+                        inv_boxcox(np.polyval(coef_polyreg[d], t), lambda1[1]) -
+                        estimate_season(data.value - inv_boxcox(np.polyval(coef_polyreg[d], t), lambda1[1]))} for d in k}
 
+'''
 for d in k:
-    LBTest = sm.stats.acorr_ljungbox(polyreg[d]['noise'] - np.mean(polyreg[d]['noise']), auto_lag=True)
+    LBTest = sm.stats.acorr_ljungbox(polyreg[d]['noise'], lags=[4,8,12])
     SWTest = stats.shapiro(polyreg[d]['noise'])
-    SSM = np.sum((polyreg[d]['trend'] * polyreg[d]['season'] - data.value.mean()) ** 2)
+    SSM = np.sum((polyreg[d]['trend'] + polyreg[d]['season'] - data.value.mean()) ** 2)
     R = SSM / SST
     print(f'Transformacja Box-Cox i estymacja trendu regresją wielomianową dla stopnia {d} \n:'
           f'R^2 = {R}\n'
           f'LJUNG-BOX = \n{LBTest}\n'
           f'SHAPIRO-WILK = \n{SWTest}\n')
+
+    fig, ax = plt.subplots(4, 1, sharex=False)
+    fig.suptitle(f'Dekompozycja Beer Production dla wielomianu stopnia {d}')
+    sns.lineplot(x=t, y=data['value'], ax=ax[0], color='black')
+    sns.lineplot(polyreg[d]['trend'] + polyreg[d]['season'], ax=ax[0], color='red', alpha=0.5)
+    ax[0].set_title('Pierwotny szereg')
+    sns.lineplot(polyreg[d]['trend'], ax=ax[1], color='darkred')
+    ax[1].set_title('Składowa trendu')
+    sns.lineplot(polyreg[d]['season'], ax=ax[2], color='darkgreen')
+    ax[2].set_title('Składowa sezonowa')
+    sns.lineplot(polyreg[d]['noise'], ax=ax[3], color='darkblue')
+    ax[3].set_title('Szum')
+    plt.tight_layout()
+    plt.show()
+
+    fig, ax = plt.subplots(2, 1, sharex=True)
+    fig.suptitle('Porównanie ACF')
+    plot_acf(polyreg[d]['noise'], ax=ax[0], color='darkgreen')
+    ax[0].set_title('ACF')
+    plot_pacf(polyreg[d]['noise'], ax=ax[1], color='darkgreen')
+    ax[1].set_title('PACF')
+    plt.tight_layout()
+    plt.show()
+    
+'''
+
+
+d=2
+fig, ax = plt.subplots(3, 1, sharex=False)
+fig.suptitle(f'Dekompozycja Beer Production dla wielomianu stopnia {d}')
+sns.lineplot(polyreg[d]['trend'], ax=ax[0], color='darkred')
+ax[0].set_title('Składowa trendu')
+sns.lineplot(polyreg[d]['season'], ax=ax[1], color='darkgreen')
+ax[1].set_title('Składowa sezonowa')
+sns.lineplot(polyreg[d]['noise'], ax=ax[2], color='darkblue')
+ax[2].set_title('Szum')
+plt.tight_layout()
+plt.savefig('wykres2.png', format='png', bbox_inches='tight')
+plt.show()
+
+fig, ax = plt.subplots(sharex=False)
+sns.lineplot(x=t, y=data['value'], color='black', label='values')
+sns.lineplot(polyreg[d]['trend'] + polyreg[d]['season'], color='red', alpha=0.5, label='model')
+plt.suptitle('Porównanie wartości przybliżonych modelem z prawdziwymi')
+plt.tight_layout()
+plt.savefig('wykres3.png', format='png', bbox_inches='tight')
+plt.show()
+
+fig, ax = plt.subplots(2, 1, sharex=True)
+fig.suptitle('Porównanie reszt')
+plot_acf(polyreg[d]['noise'], ax=ax[0], color='darkblue')
+ax[0].set_title('ACF')
+plot_pacf(polyreg[d]['noise'], ax=ax[1], color='darkblue')
+ax[1].set_title('PACF')
+plt.tight_layout()
+plt.savefig('wykres4.png', format='png', bbox_inches='tight')
+plt.show()
 
 '''
 ### Eksport danych
@@ -271,48 +387,17 @@ decompose_poly3.to_csv('decompose_poly3.csv')
 '''
 
 
-'''
-### Dekompozycja szeregu z trendem wielomianowym stopnia d
-d = 2
-fig, ax = plt.subplots(4,1, sharex=False)
-fig.suptitle('Dekompozycja Beer Production')
-sns.lineplot(data['value'],ax=ax[0], color='black')
-ax[0].set_title('Pierwotny szereg')
-sns.lineplot(polyreg[d]['trend'],ax=ax[1], color='darkred')
-ax[1].set_title('Składowa trendu')
-sns.lineplot(polyreg[d]['season'],ax=ax[2], color='darkgreen')
-ax[2].set_title('Składowa sezonowa')
-sns.lineplot(polyreg[d]['noise'], ax=ax[3], color='darkblue')
-ax[3].set_title('Szum')
-plt.savefig('wykres3.png', format='png', bbox_inches='tight')
-plt.tight_layout()
-plt.show()
-'''
-
-'''
-datam = pd.DataFrame({'time': data['time'], 'value': polyreg[3]['trend']*polyreg[3]['season']})
-plt.figure(figsize=(10, 6))
-sns.lineplot(data=data, x='time', y='value', color='darkblue', marker='o', label='Dane')
-sns.lineplot(data=datam, x='time', y='value', color='red', marker='o', label='Dane modelowe')
-plt.title('Produkcja piwa w Australii')
-plt.xlabel('Lata')
-plt.ylabel('Megalitry')
-plt.tight_layout()
-#plt.savefig('wykres1.png', format='png', bbox_inches='tight')
-plt.show()
-'''
-
 ### regresja nielokalna
 '''
 lowess_reg = sm.nonparametric.lowess
-k = [3/4, 2/3, 1/4, 1/3, 1/6, 1/8]
+k = [2/3, 1/4, 1/3, 1/6, 1/8]
 
 localreg_trend = {d: lowess_reg(data.value, t, frac=d)[:,1] for d in k}
 localreg_season = {d: estimate_season(data.value - localreg_trend[d]) for d in k}
 localreg_noise = {d: data.value - localreg_trend[d] - localreg_season[d] for d in k}
 
 for d in k:
-    LBTest = sm.stats.acorr_ljungbox(localreg_noise[d] - np.mean(localreg_noise[d]), auto_lag=True)
+    LBTest = sm.stats.acorr_ljungbox(localreg_noise[d] - np.mean(localreg_noise[d]), lags=[4,8,9,12])
     SWTest = stats.shapiro(localreg_noise[d])
     SSM = np.sum((localreg_trend[d] + localreg_season[d] - data.value.mean()) ** 2)
     R = SSM / SST
@@ -320,7 +405,62 @@ for d in k:
           f'R^2 = {R}\n'
           f'LJUNG-BOX = \n{LBTest}\n'
           f'SHAPIRO-WILK = \n{SWTest}\n')
+
+    fig, ax = plt.subplots(4, 1, sharex=False)
+    fig.suptitle(f'Dekompozycja Beer Production dla regresji nielokalnej z parametrem{d}')
+    sns.lineplot(x=t, y=data['value'], ax=ax[0], color='black')
+    sns.lineplot(localreg_trend[d] + localreg_season[d], ax=ax[0], color='red', alpha=0.5)
+    ax[0].set_title('Pierwotny szereg')
+    sns.lineplot(localreg_trend[d], ax=ax[1], color='darkred')
+    ax[1].set_title('Składowa trendu')
+    sns.lineplot(localreg_season[d], ax=ax[2], color='darkgreen')
+    ax[2].set_title('Składowa sezonowa')
+    sns.lineplot(localreg_noise[d], ax=ax[3], color='darkblue')
+    ax[3].set_title('Szum')
+    plt.tight_layout()
+    plt.show()
+
+    fig, ax = plt.subplots(2, 1, sharex=True)
+    fig.suptitle('Porównanie ACF')
+    plot_acf(localreg_noise[d], ax=ax[0], color='darkgreen')
+    ax[0].set_title('ACF')
+    plot_pacf(localreg_noise[d], ax=ax[1], color='darkgreen')
+    ax[1].set_title('PACF')
+    plt.tight_layout()
+    plt.show()
 '''
 ### eksponencjalna?
 
+def lag(data, d):
+    x = data
+    for _ in range(d):
+        x = np.diff(x, n=1)
+    return x
 
+lag_storage = {d: lag(data.value, d) for d in range(1, 13)}
+
+'''
+# Tworzenie wykresów w układzie 3x4 (3 wiersze, 4 kolumny)
+fig, ax = plt.subplots(3, 4, figsize=(15, 10))  # 3 wiersze, 4 kolumny (dla 12 lagów)
+
+# Iteracja przez lag_storage, aby przypisać każdy d do odpowiedniego podwykresu
+for i, (d, lagged_values) in enumerate(lag_storage.items()):
+    row = i // 4  # Indeks wiersza
+    col = i % 4   # Indeks kolumny
+    ax[row, col].plot(t[-len(lagged_values):], lagged_values, marker='o', color='darkblue')
+    ax[row, col].set_title(f'Lag d={d}')
+    ax[row, col].set_xlabel('Lata')
+    ax[row, col].set_ylabel('Megalitry')
+
+# Dopasowanie układu i wyświetlenie wykresu
+plt.tight_layout()
+plt.show()
+'''
+
+'''
+for d in lag_storage.keys():
+    plt.figure(figsize=(15, 5))
+    plt.plot(lag_storage[d], label=d)
+    plt.suptitle(f'{d}')
+    plt.show()
+'''
