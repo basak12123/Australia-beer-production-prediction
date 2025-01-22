@@ -3,16 +3,17 @@ library(dplyr)
 library(forecast)
 
 
-beer_prod <- read.csv("Beer_to_2010.csv")
+beer_prod <- read.csv("data/Beer_to_2010.csv")
+beer_prod <- read.csv("data/cut_data.csv")
 
-BP_ts <- ts(beer_prod$value, frequency = 12)
+BP_ts <- ts(beer_prod$value, frequency = 4)
 
 bp_ts_2010 <- ts(beer_prod$value, frequency = 4)
 ggplot(beer_prod, aes(x = `time`, y = `value`)) +
   geom_line() +
   theme_minimal()
 
-ts.plot(bp_qt$value)
+ts.plot(BP_ts)
 
 Acf(beer_prod$value, lag.max = 40)
 Pacf(beer_prod$value, lag.max = 40)
