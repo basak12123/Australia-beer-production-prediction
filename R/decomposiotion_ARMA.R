@@ -73,6 +73,8 @@ mean(approx_error)
 data2 <- data.frame(Predykcja = pred + test$trend + test$season, 
                    Rzeczywiste = beer$value[73:82]) 
 
+mse2 <- mean((data2$Predykcja - data2$Rzeczywiste)^2)
+
 approx_error <- abs(data2$Predykcja - data2$Rzeczywiste) / data2$Rzeczywiste
 mean(approx_error)
 
@@ -88,11 +90,17 @@ ggplot(data2, aes(x = 1:length(pred))) +
   scale_color_manual(values = c("Predykcja" = "blue", "Rzeczywiste" = "red")) +
   theme_minimal() +
   theme(
-    legend.position = "topleft" 
+    legend.position = "right" 
   )
 
+plot.ts(beer_dec2$trend + beer_dec2$season + beer_dec2$noise)
+lines(x = 73:82, data2$Predykcja, col = "red")
+
+qqnorm(beer_dec2$noise)
+qqline(beer_dec2$noise)
 
 # 3
+ts.plot(beer_dec2$noise)
 
 beer_dec3.ts <- ts(beer_dec3$noise, frequency = 4)
 mod3 <- ar(beer_dec3.ts, method = "yule-walker")
@@ -116,6 +124,9 @@ data3 <- data.frame(Predykcja = pred2 + test2$trend + test2$season,
 approx_error2 <- abs(data3$Predykcja - data3$Rzeczywiste) / data3$Rzeczywiste
 mean(approx_error2)
 
+mse3 <- mean((data3$Predykcja - data3$Rzeczywiste)^2)
+
+
 ggplot(data3, aes(x = 1:length(pred2))) +
   geom_line(aes(y = Predykcja, color = "Predykcja"), size = 1) +
   geom_line(aes(y = Rzeczywiste, color = "Rzeczywiste"), size = 1) +
@@ -128,5 +139,9 @@ ggplot(data3, aes(x = 1:length(pred2))) +
   scale_color_manual(values = c("Predykcja" = "blue", "Rzeczywiste" = "red")) +
   theme_minimal() +
   theme(
-    legend.position = "topleft" 
+    legend.position = "right" 
   )
+
+
+
+
