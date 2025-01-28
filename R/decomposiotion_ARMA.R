@@ -111,7 +111,7 @@ plot(forecast_values)
 train2 <- beer_dec3[1:72, ]
 test2 <- beer_dec3[73:82, ]
 
-mod3.1 <- ar(train$noise, method = "yule-walker")
+mod3.1 <- ar(train2$noise, method = "yule-walker")
 
 forecast_test2 <- forecast(mod3.1, h = length(test2$noise))
 ar_forecast2 <- predict(mod3.1, n.ahead = length(test2$noise))
@@ -144,4 +144,44 @@ ggplot(data3, aes(x = 1:length(pred2))) +
 
 
 
+# 4
 
+ts_data <- ts(beer_dec2$noise, frequency = 4, start = c(2011, 1))
+
+
+model <- ar(ts_data, method = "yule-walker")
+
+
+forecast_horizon <- (2023.75 - 2007.75) * 4
+forecast_result <- forecast(model, h = forecast_horizon)
+
+
+pred_values <- as.numeric(forecast_result$mean)
+
+
+trend_season <- beer_dec2$trend + beer_dec2$season
+extended_trend_season <- rep(trend_season, length.out = forecast_horizon)
+final_predictions <- pred_values + extended_trend_season
+
+
+start_year <- 2007.75
+end_year <- 2023.75
+forecast_index <- seq(from = start_year + 1 / 4, to = end_year, by = 1 / 4)
+
+
+forecast_data <- data.frame(
+  Time = forecast_index,
+  Prediction = final_predictions
+)
+
+
+ggplot(forecast_data, aes(x = Time, y = Prediction)) +
+  geom_line(color = "blue", size = 1) +
+  labs(
+    title = "Predykcja na podstawie modelu AR z wielomianem stopnia 2",
+    x = "Rok",
+    y = "Wartość"
+  ) +
+  theme_minimal()
+
+write.csv(forecast_data, file = "prediction_ar4.csv", row.names = FALSE)
